@@ -5,6 +5,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
+from datasets import load_dataset, load_metric, Audio
 from typing import Any, Dict, List, Optional, Union
 import soundfile as sf
 import datasets
@@ -84,12 +85,7 @@ class ModelArguments:
             "vectors will be masked along the time axis. This is only relevant if ``apply_spec_augment is True``."
         },
     )
-    gradient_checkpointing: Optional[bool] = field(
-        default=True,
-        metadata={
-            "help": "If True, use gradient checkpointing to save memory at the expense of slower backward pass."
-        },
-    )
+
     layerdrop: Optional[float] = field(default=0.0, metadata={"help": "The LayerDrop probability."})
 
 
@@ -305,8 +301,8 @@ def main():
     set_seed(training_args.seed)
 
     # Get the datasets:
-    train_dataset = datasets.load_dataset("egy_speech_corpus", split='train', cache_dir=model_args.cache_dir)
-    eval_dataset = datasets.load_dataset("egy_speech_corpus", split="dev", cache_dir=model_args.cache_dir)
+    train_dataset = datasets.load_dataset("ksa_speech_corpus", split='train', cache_dir=model_args.cache_dir)
+    eval_dataset = datasets.load_dataset("ksa_speech_corpus", split="dev", cache_dir=model_args.cache_dir)
 
     # Create and save tokenizer
     chars_to_ignore_regex = f'[{"".join(data_args.chars_to_ignore)}]'
@@ -374,7 +370,6 @@ def main():
         hidden_dropout=model_args.hidden_dropout,
         feat_proj_dropout=model_args.feat_proj_dropout,
         mask_time_prob=model_args.mask_time_prob,
-        gradient_checkpointing=model_args.gradient_checkpointing,
         layerdrop=model_args.layerdrop,
         ctc_loss_reduction="mean",
         pad_token_id=processor.tokenizer.pad_token_id,
@@ -425,11 +420,14 @@ def main():
         assert (
             len(set(batch["sampling_rate"])) == 1
         ), f"Make sure all inputs have the same sampling rate of {processor.feature_extractor.sampling_rate}."
-        batch["input_values"] = processor(batch["speech"], sampling_rate=batch["sampling_rate"][0]).input_values
+        batch["input_values"] = processor(batch["speech"], sampling_rate=batch["sampling_rate"]).input_values[0]
         # Setup the processor for targets
         with processor.as_target_processor():
             batch["labels"] = processor(batch["target_text"]).input_ids
         return batch
+
+    # train_dataset = train_dataset.cast_column("speech", Audio(sampling_rate=16_000))
+    # eval_dataset = eval_dataset.cast_column("speech", Audio(sampling_rate=16_000))
 
     train_dataset = train_dataset.map(
         prepare_dataset,
@@ -517,7 +515,7 @@ def main():
         trainer.save_metrics("eval", metrics)
 
     return results
-
-
+    
 if __name__ == "__main__":
     main()
+
